@@ -30,7 +30,9 @@
 #define M_PI_2     1.57079632679489661923
 //#include <vcg/complex/algorithms/smooth.h>
 #include <vcg/complex/algorithms/smooth.h>
-#include <wrap/io_trimesh/export_ply.h>
+//#include <wrap/io_trimesh/export_ply.h>
+#include <GL/glut.h>
+#include <wrap/io_trimesh/export_dae.h>
 
 // update
 #include <vcg/complex/algorithms/update/topology.h>
@@ -51,28 +53,52 @@ class MyVertex;
 struct MyUsedTypes : public UsedTypes<	Use<MyVertex>		::AsVertexType,
 																				Use<MyFace>			::AsFaceType>{};
 
-class MyVertex     : public Vertex< MyUsedTypes, vertex::Coord3f, vertex::BitFlags , vertex::Normal3f, vertex::VFAdj, vertex::Mark>{
+class MyVertex     : public Vertex< MyUsedTypes, vertex::Coord3f, vertex::BitFlags , vertex::Normal3f, vertex::VFAdj, vertex::Mark, vertex::Color4b>{
       public:
         vcg::math::Quadric<double> &Qd() {return q;}
       private:
         math::Quadric<double> q;
 };
-class MyFace       : public Face< MyUsedTypes, face::VertexRef, face::BitFlags, face::Normal3f, face::VFAdj> {};
+class MyFace       : public Face< MyUsedTypes, face::VertexRef, face::BitFlags, face::Normal3f, face::VFAdj , face::FFAdj> {};
 
 class MyMesh		: public vcg::tri::TriMesh< std::vector< MyVertex>, std::vector< MyFace > > {};
 
+namespace vcg
+{
+namespace tri
+{
+
 typedef BasicVertexPair<MyVertex> VertexPair;
 
-class MyTriEdgeCollapse: public vcg::tri::TriEdgeCollapseQuadric< MyMesh, VertexPair, MyTriEdgeCollapse, QInfoStandard<MyVertex>  > {
-            public:
-            typedef  vcg::tri::TriEdgeCollapseQuadric< MyMesh,  VertexPair, MyTriEdgeCollapse, QInfoStandard<MyVertex>  > TECQ;
-            typedef  MyMesh::VertexType::EdgeType EdgeType;
+
+typedef	SimpleTempData<MyMesh::VertContainer, math::Quadric<double> > QuadricTemp;
+
+
+class QHelper
+        {
+        public:
+      QHelper(){}
+      static void Init(){}
+      static math::Quadric<double> &Qd(MyVertex &v) {return TD()[v];}
+      static math::Quadric<double> &Qd(MyVertex *v) {return TD()[*v];}
+      static MyVertex::ScalarType W(MyVertex * /*v*/) {return 1.0;}
+      static MyVertex::ScalarType W(MyVertex & /*v*/) {return 1.0;}
+      static void Merge(MyVertex & /*v_dest*/, MyVertex const & /*v_del*/){}
+      static QuadricTemp* &TDp() {static QuadricTemp *td; return td;}
+      static QuadricTemp &TD() {return *TDp();}
+        };
+
+
+class MyTriEdgeCollapse: public vcg::tri::TriEdgeCollapseQuadric< MyMesh, VertexPair , MyTriEdgeCollapse, QHelper > {
+                        public:
+            typedef  vcg::tri::TriEdgeCollapseQuadric< MyMesh, VertexPair,  MyTriEdgeCollapse, QHelper> TECQ;
             inline MyTriEdgeCollapse(  const VertexPair &p, int i, BaseParameterClass *pp) :TECQ(p,i,pp){}
 };
-
+}
+}
 typedef SimpleVolume<SimpleVoxel> MyVolume;
 
-int main(int /*argc*/ , char **/*argv*/)
+int main(int argc , char **argv)
 {
 	MyVolume	volume;
   
@@ -80,52 +106,55 @@ int main(int /*argc*/ , char **/*argv*/)
 	typedef vcg::tri::MarchingCubes<MyMesh, MyWalker>	MyMarchingCubes;
 	MyWalker walker;
 	
-
-  // Simple initialization of the volume with some cool perlin noise
-
-    volume.Init(Point3i(512,512,137));
-    /*
-  for(int i=0;i<512;i++)
-    for(int j=0;j<512;j++)
-      for(int k=0;k<137;k++)
-        volume.Val(i,j,k)=(j-32)*(j-32)+(k-32)*(k-32)  + i*10*(float)math::Perlin::Noise(i*.2,j*.2,k*.2);
-*/
-
-    FILE* pfin = fopen("result.dat" , "rb");
-    if( pfin == NULL )exit(1);
-    char c;
     int w,h,d;
-    w = 512;
-    h = 512;
-    d = 137;
-
+    float iso_value;
+    const char* path;
+    if( argc > 1){
+        w = atoi( argv[1] );
+        h = atoi( argv[2] );
+        d = atoi( argv[3] );
+        iso_value = atof( argv[4] );
+        path = argv[5];
+    }else{
+        printf("unexpected parameters...");
+        exit(1);
+    }
+  // Simple initialization of the volume with some cool perlin noise
+    printf( "%d %d %d %.2f path: %s\n" , w, h, d, iso_value, path);
     volume.Init(Point3i(w,h,d));
-    char max_c = 0;
+
+    FILE* pfin = fopen( path , "rb");
+    if( pfin == NULL )exit(1);
+
+    float v;
     for(int k=0;k<d;k++)
-  for(int i=0;i<w;i++)
-    for(int j=0;j<h;j++){
-        fread( &c , 1 , 1 , pfin );
-        if( c > max_c ) max_c = c;
-        volume.Val(i,j,k)= c;
-      }
-  fclose( pfin );
-  printf("max_c: %d\n" , (int)max_c );
+        for(int j=0;j<h;j++)
+            for(int i=0;i<w;i++){
+                fread( &v , sizeof(float) , 1 , pfin );
+            volume.Val(i,j,k)= 1 - v;
+        }
+    fclose( pfin );
 
 	// MARCHING CUBES
 	MyMesh		mc_mesh;
 	printf("[MARCHING CUBES] Building mesh...");
 	MyMarchingCubes					mc(mc_mesh, walker);
-    walker.BuildMesh<MyMarchingCubes>(mc_mesh, volume, mc, 15);
+    walker.BuildMesh<MyMarchingCubes>(mc_mesh, volume, mc, iso_value);
     printf("generate face num %d, vertex num %d" , mc_mesh.vn , mc_mesh.fn );
-
+    tri::UpdateTopology<MyMesh>::VertexFace(mc_mesh);
+    tri::UpdateFlags<MyMesh>::FaceBorderFromVF(mc_mesh);
+    math::Quadric<double> QZero;
+    QZero.SetZero();
+    tri::QuadricTemp TD(mc_mesh.vert,QZero);
+    tri::QHelper::TDp()=&TD;
 
     TriEdgeCollapseQuadricParameter qparams;
     qparams.QualityThr  =.3;
-    float TargetError=std::numeric_limits<float>::max();
+    //float TargetError=std::numeric_limits<float>::max();
     int FinalSize=mc_mesh.fn*0.2;
     printf("target face num %d\n" , FinalSize);
     qparams.PreserveTopology = true;
-    qparams.QuadricEpsilon=TargetError;
+    //qparams.QuadricEpsilon=TargetError;
     qparams.NormalCheck=true;
 
     vcg::tri::UpdateBounding<MyMesh>::Box(mc_mesh);
@@ -140,16 +169,16 @@ int main(int /*argc*/ , char **/*argv*/)
     DeciSession.SetTargetSimplices(FinalSize);
     DeciSession.SetTimeBudget(0.5f);
 
-    if(TargetError< std::numeric_limits<float>::max() ) DeciSession.SetTargetMetric(TargetError);
+    //if(TargetError< std::numeric_limits<float>::max() ) DeciSession.SetTargetMetric(TargetError);
 
     printf("start mesh decimator....\n");
-    while(DeciSession.DoOptimization() && mc_mesh.fn>FinalSize && DeciSession.currMetric < TargetError)
-      printf("Current Mesh size %7i heap sz %9i err %9g \r",mc_mesh.fn, int(DeciSession.h.size()),DeciSession.currMetric);
+    while(DeciSession.DoOptimization() && mc_mesh.fn>FinalSize )
+      printf("Current Mesh size %7i heap sz %9i err \r",mc_mesh.fn, int(DeciSession.h.size()));
 
     int t3=clock();
     printf("mesh  %d %d Error %g \n",mc_mesh.vn,mc_mesh.fn,DeciSession.currMetric);
     printf("\nCompleted in (%i+%i) msec\n",t2-t1,t3-t2);
-
+    DeciSession.Finalize<tri::MyTriEdgeCollapse >();
      tri::UpdateNormal<MyMesh>::PerVertexNormalizedPerFace(mc_mesh);
 
     printf("start taubin smooth....\n");
@@ -164,7 +193,8 @@ int main(int /*argc*/ , char **/*argv*/)
     //Log( "Smoothed %d vertices", cnt>0 ? cnt : mc_mesh.vn);
     tri::UpdateNormal<MyMesh>::PerVertexNormalizedPerFace(mc_mesh);
 
-	vcg::tri::io::ExporterPLY<MyMesh>::Save( mc_mesh, "marching_cubes.ply");
+    int mask = tri::io::Mask::IOM_VERTNORMAL;
+    vcg::tri::io::ExporterDAE<MyMesh>::Save( mc_mesh, "marching_cubes.dae" ,  mask );
 
 	printf("OK!\n");
 }
