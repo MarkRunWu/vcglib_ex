@@ -159,31 +159,31 @@ public:
         for(j=0,vi=_mesh.vert.begin();vi!=_mesh.vert.end();++vi,j++){
             vp=&(*vi);
             indices[vi] = j;
-            fout << setprecision(2) << vp->P()[0] << " " << setprecision(2) <<  vp->P()[1] << " " << setprecision(2) << vp->P()[2] << " ";
+            fout << setprecision(5) << vp->P()[0] << " " << setprecision(5) <<  vp->P()[1] << " " << setprecision(5) << vp->P()[2] << " ";
         }
 
         fout <<"</float_array>\n"
              << "<technique_common>\n" <<
-                "<accessor count=\"" << _mesh.VN()/3 << "\" source=\"#ID7" << "\" stride=\"" << 3 << "\">" << std::endl;
+                "<accessor count=\"" << _mesh.VN() << "\" source=\"#ID7" << "\" stride=\"" << 3 << "\">" << std::endl;
         fout << "<param name=\"X\" type=\"float\" />\n" <<
                 "<param name=\"Y\" type=\"float\" />\n" <<
                 "<param name=\"Z\" type=\"float\" />\n" <<
         "</accessor>\n</technique_common>\n</source>" << std::endl;
         //normals
         fout << "<source id=\"ID6\">" <<
-                "<float_array id=\"ID8" << "\" count=\"" << _mesh.VN() << "\">";
+                "<float_array id=\"ID8" << "\" count=\"" << 3*_mesh.FN() << "\">";
         //write normals
         FacePointer fp;
 
         FaceIterator fi;
         for(j=0,fi=_mesh.face.begin();fi!=_mesh.face.end();++fi){
             fp=&(*fi);
-            fout << setprecision(2) << (double)fp->N()[0] << " " << setprecision(2) << (double)fp->N()[1] << " " << setprecision(2) << (double)fp->N()[2] << " ";
+            fout << setprecision(5) << (double)fp->N()[0] << " " << setprecision(5) << (double)fp->N()[1] << " " << setprecision(5) << (double)fp->N()[2] << " ";
         }
 
         fout <<"</float_array>\n"
              << "<technique_common>\n" <<
-                "<accessor count=\"" << _mesh.FN()/3 << "\" source=\"#ID8" << "\" stride=\"" << 3 << "\">" << std::endl;
+                "<accessor count=\"" << _mesh.FN() << "\" source=\"#ID8" << "\" stride=\"" << 3 << "\">" << std::endl;
         fout << "<param name=\"X\" type=\"float\" />\n" <<
                 "<param name=\"Y\" type=\"float\" />\n" <<
                 "<param name=\"Z\" type=\"float\" />\n" <<
@@ -314,13 +314,19 @@ MyMarchingCubes	mc(mc_mesh, walker);
     //tri::UpdateTopology<MyMesh>::VertexFace(mc_mesh);
     tri::UpdateNormal<MyMesh>::PerFaceNormalized(mc_mesh);
 
+    /* Explicitly delete unused vectors and faces,which is not impicitly cleared by exporterDAE */
+    vcg::tri::Allocator<MyMesh>::CompactFaceVector(mc_mesh);
+    vcg::tri::Allocator<MyMesh>::CompactVertexVector(mc_mesh);
 
-    /*int mask = tri::io::Mask::;
-    vcg::tri::io::ExporterDAE<MyMesh>::Save( mc_mesh, "marching_cubes.dae" , mask );
+    int mask = tri::io::Mask::IOM_FACENORMAL;
+    /*
     vcg::tri::io::ExporterPLY<MyMesh>::Save( mc_mesh, "marching_cubes.dae" );
-    */
+
     DAEConverter dae_saver;
+
     dae_saver.saveModel( "my.dae" , mc_mesh , update );
+    */
+    vcg::tri::io::ExporterDAE<MyMesh>::Save( mc_mesh, "marching_cubes.dae" , mask );
 
 printf("OK!\n");
 }
